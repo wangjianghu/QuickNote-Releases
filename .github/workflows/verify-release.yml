@@ -1,0 +1,36 @@
+name: Verify QuickNote installer
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-installer:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Check tag and standalone ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]
+          version="${RELEASE_TAG%%+*}"
+          asset="QuickNote-${version}.zip"
+          release="$(gh release view "$RELEASE_TAG" --json assets)"
+          jq -e --arg name "$asset" '(.assets | length) == 1 and .assets[0].name == $name' <<<"$release"
+          gh release download "$RELEASE_TAG" --pattern "$asset"
+          unzip -tq "$asset"
+          files="$(unzip -Z1 "$asset" | awk '!/\/$/' | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            QuickNote.app/Contents/Info.plist \
+            QuickNote.app/Contents/MacOS/QuickNote \
+            QuickNote.app/Contents/Resources/QuickNote.icns \
+            QuickNote.app/Contents/_CodeSignature/CodeResources | LC_ALL=C sort)"
+          [[ "$files" == "$expected" ]]
+          shasum -a 256 "$asset"
